@@ -1,36 +1,18 @@
 import {
   SPECIES,
   WORLD,
+  PLAYABLE,
   canForage,
   canHunt,
   canScavenge,
   strikeDamage,
 } from "./species.js";
+import { BIOMES, biomeAt, rankForXp, xpProgress } from "./meta.js";
 
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-
-const BIOMES = [
-  { id: "savanna", color: "#c2a66a", forage: 1.1, cover: 0.25, water: 0.15 },
-  { id: "woodland", color: "#3d5c3a", forage: 1.0, cover: 0.7, water: 0.2 },
-  { id: "wetland", color: "#2f5e4e", forage: 0.85, cover: 0.4, water: 0.9 },
-  { id: "ridge", color: "#6b6358", forage: 0.55, cover: 0.35, water: 0.05 },
-];
-
-function biomeAt(x, y) {
-  const nx = x / WORLD.width;
-  const ny = y / WORLD.height;
-  const n =
-    Math.sin(nx * 6.2 + ny * 2.1) * 0.45 +
-    Math.sin(nx * 14.0 - ny * 9.0) * 0.25 +
-    Math.sin((nx + ny) * 3.5) * 0.3;
-  if (ny > 0.72 && n > -0.1) return BIOMES[2];
-  if (n > 0.35) return BIOMES[1];
-  if (n < -0.35) return BIOMES[3];
-  return BIOMES[0];
-}
 
 let nextId = 1;
 const nid = (prefix) => `${prefix}_${nextId++}`;
@@ -39,77 +21,121 @@ export class LifechainWorld {
   constructor() {
     this.players = new Map();
     this.npcs = new Map();
+    this.packs = new Map();
+    this.territories = new Map();
     this.plants = [];
     this.waters = [];
     this.carcasses = [];
-    this.timeOfDay = 0.28; // dawn-ish
+    this.timeOfDay = 0.28;
     this.events = [];
     this._seedTerrain();
     this._seedWildlife();
   }
 
   _seedTerrain() {
-    for (let i = 0; i < 220; i++) {
+    for (let i = 0; i < 300; i++) {
       const x = rand(80, WORLD.width - 80);
       const y = rand(80, WORLD.height - 80);
-      const b = biomeAt(x, y);
+      const b = biomeAt(x, y, WORLD.width, WORLD.height);
       this.plants.push({
         id: nid("plant"),
         x,
         y,
-        biomass: rand(40, 100) * b.forage,
+        biomass: rand(35, 100) * b.forage,
         maxBiomass: 100 * b.forage,
-        regen: 4 * b.forage,
+        regen: 3.5 * b.forage,
       });
     }
-    // Water holes / river-ish bands
-    for (let i = 0; i < 18; i++) {
+    // Wetland / river belt
+    for (let i = 0; i < 12; i++) {
       this.waters.push({
         id: nid("water"),
         x: rand(200, WORLD.width - 200),
-        y: WORLD.height * (0.68 + rand(0, 0.22)),
-        r: rand(70, 140),
+        y: WORLD.height * (0.7 + rand(0, 0.22)),
+        r: rand(80, 160),
       });
     }
-    for (let i = 0; i < 8; i++) {
+    // Inland pans
+    for (let i = 0; i < 12; i++) {
       this.waters.push({
         id: nid("water"),
-        x: rand(150, WORLD.width - 150),
-        y: rand(150, WORLD.height * 0.55),
-        r: rand(45, 90),
+        x: rand(180, WORLD.width - 180),
+        y: rand(180, WORLD.height * 0.65),
+        r: rand(50, 110),
+      });
+    }
+    // Floodplain lakes
+    for (let i = 0; i < 6; i++) {
+      this.waters.push({
+        id: nid("water"),
+        x: WORLD.width * (0.7 + rand(0, 0.22)),
+        y: WORLD.height * (0.4 + rand(0, 0.25)),
+        r: rand(90, 150),
       });
     }
   }
 
   _seedWildlife() {
     const roster = [
-      ["rabbit", 28],
-      ["impala", 18],
-      ["warthog", 10],
-      ["jackal", 10],
-      ["hyena", 8],
-      ["leopard", 5],
-      ["wolf", 8],
-      ["crocodile", 6],
-      ["lion", 5],
-      ["buffalo", 8],
-      ["elephant", 3],
-      ["bear", 4],
+      ["rabbit", 36],
+      ["impala", 28],
+      ["warthog", 14],
+      ["zebra", 16],
+      ["crocodile", 7],
+      ["lion", 8],
+      ["buffalo", 10],
+      ["elephant", 5],
+      ["bear", 5],
     ];
     for (const [sid, count] of roster) {
       for (let i = 0; i < count; i++) this._spawnNpc(sid);
+    }
+    this._seedNpcPacks();
+  }
+
+  _seedNpcPacks() {
+    const candidates = [
+      ["lion", 3],
+      ["buffalo", 4],
+      ["elephant", 3],
+    ];
+    const packCount = Math.random() < 0.5 ? 1 : 2;
+    const shuffled = candidates.sort(() => Math.random() - 0.5).slice(0, packCount);
+    for (const [sid, size] of shuffled) {
+      const members = [...this.npcs.values()].filter(
+        (n) => n.alive && n.speciesId === sid && !n.packId
+      );
+      if (members.length < size) continue;
+      const leader = members[0];
+      const label = SPECIES[sid].packLabel || "Pack";
+      const pack = this._createPack(leader, `${label} of the wild`);
+      for (let i = 1; i < size && i < members.length; i++) {
+        this._joinPack(members[i], pack.id);
+      }
     }
   }
 
   _spawnNpc(speciesId, near = null) {
     const sp = SPECIES[speciesId];
+    if (!sp) return null;
     let x = rand(100, WORLD.width - 100);
     let y = rand(100, WORLD.height - 100);
     if (near) {
       x = clamp(near.x + rand(-220, 220), 80, WORLD.width - 80);
       y = clamp(near.y + rand(-220, 220), 80, WORLD.height - 80);
+    } else if (sp.favoredBiomes?.length) {
+      for (let tries = 0; tries < 12; tries++) {
+        const tx = rand(100, WORLD.width - 100);
+        const ty = rand(100, WORLD.height - 100);
+        const b = biomeAt(tx, ty, WORLD.width, WORLD.height);
+        if (sp.favoredBiomes.includes(b.id)) {
+          x = tx;
+          y = ty;
+          break;
+        }
+      }
     }
-    if (speciesId === "crocodile") {
+    if (speciesId === "crocodile" && this.waters.length) {
       const w = pick(this.waters);
       x = w.x + rand(-w.r, w.r);
       y = w.y + rand(-w.r * 0.4, w.r * 0.4);
@@ -121,6 +147,8 @@ export class LifechainWorld {
       timer: rand(1, 4),
       homeX: x,
       homeY: y,
+      wx: x,
+      wy: y,
     };
     this.npcs.set(ent.id, ent);
     return ent;
@@ -134,15 +162,13 @@ export class LifechainWorld {
       isPlayer,
       x,
       y,
-      vx: 0,
-      vy: 0,
       angle: rand(0, Math.PI * 2),
       health: 100,
       maxHealth: 100,
       stamina: 100,
       maxStamina: 100,
-      hunger: 55 + rand(0, 25),
-      thirst: 50 + rand(0, 25),
+      hunger: isPlayer ? 70 : 55 + rand(0, 25),
+      thirst: isPlayer ? 70 : 50 + rand(0, 25),
       alive: true,
       attackCd: 0,
       sprint: false,
@@ -150,14 +176,32 @@ export class LifechainWorld {
       ageSec: 0,
       lastHitBy: null,
       protectUntil: 0,
+      xp: isPlayer ? 0 : rand(40, 400),
+      lifetimeXp: 0,
+      packId: null,
+      territoryId: null,
     };
   }
 
+  _favoredSpawn(sp) {
+    let x = rand(WORLD.width * 0.25, WORLD.width * 0.75);
+    let y = rand(WORLD.height * 0.2, WORLD.height * 0.5);
+    for (let tries = 0; tries < 16; tries++) {
+      const tx = rand(WORLD.width * 0.15, WORLD.width * 0.85);
+      const ty = rand(WORLD.height * 0.15, WORLD.height * 0.6);
+      const b = biomeAt(tx, ty, WORLD.width, WORLD.height);
+      if (sp.favoredBiomes.includes(b.id)) {
+        return { x: tx, y: ty };
+      }
+    }
+    return { x, y };
+  }
+
   spawnPlayer(wsId, speciesId, displayName) {
-    const sp = SPECIES[speciesId] || SPECIES.impala;
-    // Spawn on open savanna away from the wetland crocodile belt
-    const x = rand(WORLD.width * 0.25, WORLD.width * 0.75);
-    const y = rand(WORLD.height * 0.18, WORLD.height * 0.48);
+    const playableIds = PLAYABLE.map((s) => s.id);
+    const sid = playableIds.includes(speciesId) ? speciesId : "lion";
+    const sp = SPECIES[sid];
+    const { x, y } = this._favoredSpawn(sp);
     const p = this._makeCreature(wsId, sp, x, y, true);
     p.name = (displayName || "Wanderer").slice(0, 18);
     p.hunger = 70;
@@ -165,14 +209,16 @@ export class LifechainWorld {
     p.protectUntil = Date.now() + 20000;
     this._clearThreatsNear(p, 280);
     this.players.set(wsId, p);
-    this.events.push({
-      t: Date.now(),
-      text: `${p.name} entered the wild as ${sp.name}.`,
-    });
+    this._pushEvent(`${p.name} entered the wild as ${sp.name}.`);
     return p;
   }
 
   removePlayer(wsId) {
+    const p = this.players.get(wsId);
+    if (p) {
+      if (p.packId) this._leavePack(p);
+      if (p.territoryId) this._abandonTerritory(p);
+    }
     this.players.delete(wsId);
   }
 
@@ -190,10 +236,16 @@ export class LifechainWorld {
     return this.players.get(id) || this.npcs.get(id);
   }
 
+  _pushEvent(text) {
+    this.events.push({ t: Date.now(), text });
+    if (this.events.length > 50) this.events.splice(0, this.events.length - 50);
+  }
+
   tick(dt) {
     this.timeOfDay = (this.timeOfDay + dt / WORLD.dayLengthSec) % 1;
     this._regenPlants(dt);
     this._ageCarcasses(dt);
+    this._tickTerritories(dt);
 
     for (const p of this.players.values()) {
       if (p.alive) this._updatePlayer(p, dt);
@@ -203,22 +255,256 @@ export class LifechainWorld {
       if (n.alive) this._updateNpc(n, dt);
     }
 
-    // Respawn NPCs slowly
-    if (this.npcs.size < 100 && Math.random() < dt * 0.15) {
+    // Slow NPC replenishment
+    if (this.npcs.size < 110 && Math.random() < dt * 0.2) {
       const sid = pick([
         "rabbit",
         "rabbit",
         "impala",
         "impala",
+        "zebra",
         "warthog",
-        "jackal",
-        "hyena",
-        "wolf",
+        "lion",
+        "buffalo",
       ]);
       this._spawnNpc(sid);
     }
 
-    if (this.events.length > 40) this.events.splice(0, this.events.length - 40);
+    if (this.events.length > 50) this.events.splice(0, this.events.length - 50);
+  }
+
+  // —— Packs ——
+  _createPack(leader, name) {
+    const sp = SPECIES[leader.speciesId];
+    const pack = {
+      id: nid("pack"),
+      speciesId: leader.speciesId,
+      name: name || `${leader.name}'s ${sp.packLabel}`,
+      leaderId: leader.id,
+      memberIds: [leader.id],
+    };
+    this.packs.set(pack.id, pack);
+    leader.packId = pack.id;
+    return pack;
+  }
+
+  _joinPack(ent, packId) {
+    const pack = this.packs.get(packId);
+    if (!pack || !ent.alive) return false;
+    if (ent.speciesId !== pack.speciesId) return false;
+    if (ent.packId) this._leavePack(ent);
+    const leader = this.getCreature(pack.leaderId);
+    const leaderRank = rankForXp(leader?.xp || 0);
+    if (pack.memberIds.length >= leaderRank.packSlots) return false;
+    pack.memberIds.push(ent.id);
+    ent.packId = pack.id;
+    return true;
+  }
+
+  _leavePack(ent) {
+    const pack = this.packs.get(ent.packId);
+    if (!pack) {
+      ent.packId = null;
+      return;
+    }
+    pack.memberIds = pack.memberIds.filter((id) => id !== ent.id);
+    ent.packId = null;
+    if (pack.leaderId === ent.id) {
+      if (pack.memberIds.length) {
+        pack.leaderId = pack.memberIds[0];
+        const next = this.getCreature(pack.leaderId);
+        if (next) this._pushEvent(`${next.name} now leads ${pack.name}.`);
+      } else {
+        this.packs.delete(pack.id);
+      }
+    }
+  }
+
+  tryCreatePack(wsId) {
+    const p = this.players.get(wsId);
+    if (!p?.alive) return;
+    const sp = SPECIES[p.speciesId];
+    if (sp.social === "solitary") {
+      this._pushEvent(`${sp.name}s are solitary — claim territory instead (T).`);
+      return;
+    }
+    if (p.packId) {
+      this._pushEvent(`Already in ${this.packs.get(p.packId)?.name}.`);
+      return;
+    }
+    const pack = this._createPack(p);
+    this._grantXp(p, 25, "founded a pack");
+    this._pushEvent(`${p.name} founded ${pack.name}.`);
+  }
+
+  tryJoinNearbyPack(wsId) {
+    const p = this.players.get(wsId);
+    if (!p?.alive) return;
+    const sp = SPECIES[p.speciesId];
+    if (sp.social === "solitary") return;
+    if (p.packId) return;
+
+    let best = null;
+    let bestD = 220;
+    for (const o of this.allCreatures()) {
+      if (!o.alive || o.id === p.id) continue;
+      if (o.speciesId !== p.speciesId) continue;
+      if (!o.packId) continue;
+      const d = dist(p, o);
+      if (d < bestD) {
+        bestD = d;
+        best = o;
+      }
+    }
+    if (best) {
+      if (this._joinPack(p, best.packId)) {
+        const pack = this.packs.get(best.packId);
+        this._grantXp(p, 15, "joined a pack");
+        this._pushEvent(`${p.name} joined ${pack.name}.`);
+      }
+      return;
+    }
+
+    const loner = this.allCreatures().find(
+      (o) =>
+        o.alive &&
+        o.id !== p.id &&
+        o.speciesId === p.speciesId &&
+        !o.packId &&
+        dist(p, o) < 200
+    );
+    if (loner) {
+      const pack = this._createPack(p);
+      this._joinPack(loner, pack.id);
+      this._grantXp(p, 20, "recruited packmate");
+      this._pushEvent(`${p.name} formed ${pack.name} with ${loner.name}.`);
+    }
+  }
+
+  tryLeavePack(wsId) {
+    const p = this.players.get(wsId);
+    if (!p?.packId) return;
+    const name = this.packs.get(p.packId)?.name || "the pack";
+    this._leavePack(p);
+    this._pushEvent(`${p.name} left ${name}.`);
+  }
+
+  // —— Territories ——
+  tryClaimTerritory(wsId) {
+    const p = this.players.get(wsId);
+    if (!p?.alive) return;
+    const sp = SPECIES[p.speciesId];
+    const rank = rankForXp(p.xp || 0);
+    if (rank.id === "juvenile") {
+      this._pushEvent(`Reach Adult rank before claiming territory.`);
+      return;
+    }
+    if (p.territoryId) {
+      this._pushEvent(`You already hold a territory.`);
+      return;
+    }
+    for (const t of this.territories.values()) {
+      if (dist(p, t) < t.radius * 0.85) {
+        this._pushEvent(`Too close to another claim — move farther.`);
+        return;
+      }
+    }
+    const biome = biomeAt(p.x, p.y, WORLD.width, WORLD.height);
+    const favored = sp.favoredBiomes.includes(biome.id);
+    const radius = rank.territoryR * (favored ? sp.territoryMul : 0.85);
+    const terr = {
+      id: nid("terr"),
+      ownerId: p.id,
+      packId: p.packId || null,
+      speciesId: p.speciesId,
+      x: p.x,
+      y: p.y,
+      radius,
+      biomeId: biome.id,
+      control: 100,
+      contestedBy: null,
+    };
+    this.territories.set(terr.id, terr);
+    p.territoryId = terr.id;
+    const xp = favored ? 40 : 25;
+    this._grantXp(p, xp, "claimed territory");
+    this._pushEvent(
+      `${p.name} claimed ${biome.name} territory (${Math.round(radius)}m).`
+    );
+  }
+
+  _abandonTerritory(ent) {
+    if (!ent.territoryId) return;
+    this.territories.delete(ent.territoryId);
+    ent.territoryId = null;
+  }
+
+  _tickTerritories(dt) {
+    for (const t of [...this.territories.values()]) {
+      const owner = this.getCreature(t.ownerId);
+      if (!owner || !owner.alive) {
+        this.territories.delete(t.id);
+        continue;
+      }
+      let contest = null;
+      for (const o of this.allCreatures()) {
+        if (!o.alive || o.id === owner.id) continue;
+        if (dist(o, t) > t.radius) continue;
+        const osp = SPECIES[o.speciesId];
+        const samePack =
+          (o.packId && o.packId === t.packId) ||
+          (o.packId && owner.packId && o.packId === owner.packId);
+        if (samePack) continue;
+        if (osp.guild === "prey") continue;
+        if (
+          osp.id === owner.speciesId ||
+          osp.guild === "apex" ||
+          osp.guild === "megaherbivore"
+        ) {
+          contest = o;
+          break;
+        }
+      }
+      if (contest) {
+        t.contestedBy = contest.id;
+        t.control = Math.max(0, t.control - 12 * dt);
+        if (t.control <= 0) {
+          this.territories.delete(t.id);
+          owner.territoryId = null;
+          if (contest.isPlayer) {
+            this._grantXp(contest, 50, "seized territory");
+          }
+          this._pushEvent(`${contest.name} seized territory from ${owner.name}!`);
+        }
+      } else {
+        t.contestedBy = null;
+        t.control = Math.min(100, t.control + 8 * dt);
+        if (owner.isPlayer && dist(owner, t) < t.radius) {
+          owner._terrXpAcc = (owner._terrXpAcc || 0) + dt;
+          if (owner._terrXpAcc >= 8) {
+            owner._terrXpAcc = 0;
+            this._grantXp(owner, 3, null);
+          }
+          owner.health = Math.min(owner.maxHealth, owner.health + 1.5 * dt);
+          owner.stamina = Math.min(owner.maxStamina, owner.stamina + 2 * dt);
+        }
+      }
+      if (owner.packId) t.packId = owner.packId;
+    }
+  }
+
+  // —— Progression ——
+  _grantXp(ent, amount, reason) {
+    if (!ent || !amount) return;
+    const before = rankForXp(ent.xp || 0);
+    ent.xp = (ent.xp || 0) + amount;
+    ent.lifetimeXp = (ent.lifetimeXp || 0) + amount;
+    const after = rankForXp(ent.xp);
+    if (after.id !== before.id && ent.isPlayer) {
+      this._pushEvent(`${ent.name} ascended to ${after.name}!`);
+    } else if (reason && ent.isPlayer && amount >= 15) {
+      this._pushEvent(`${ent.name} +${amount} XP (${reason}).`);
+    }
   }
 
   _regenPlants(dt) {
@@ -239,6 +525,7 @@ export class LifechainWorld {
 
   _survivalDrain(ent, sp, dt) {
     ent.ageSec += dt;
+    const rank = rankForXp(ent.xp || 0);
     ent.hunger = clamp(ent.hunger - sp.hungerRate * 1.8 * dt, 0, 100);
     ent.thirst = clamp(ent.thirst - sp.thirstRate * 2.0 * dt, 0, 100);
     if (ent.hunger < 12) ent.health -= 4 * dt;
@@ -247,6 +534,14 @@ export class LifechainWorld {
       ent.stamina = Math.min(ent.maxStamina, ent.stamina + 12 * sp.stamina * dt);
     }
     ent.attackCd = Math.max(0, ent.attackCd - dt);
+    if (ent.isPlayer) {
+      ent._liveXpAcc = (ent._liveXpAcc || 0) + dt;
+      if (ent._liveXpAcc >= 20) {
+        ent._liveXpAcc = 0;
+        this._grantXp(ent, 2, null);
+      }
+    }
+    ent._powerMul = rank.powerMul;
     if (ent.health <= 0) this._kill(ent, ent.lastHitBy);
   }
 
@@ -266,7 +561,6 @@ export class LifechainWorld {
     } else {
       ent.sprint = false;
     }
-    // Crocs are sluggish far from water
     if (sp.id === "crocodile") {
       const nearWater = this.waters.some((w) => dist(ent, w) < w.r + 80);
       if (!nearWater) speed *= 0.45;
@@ -287,7 +581,6 @@ export class LifechainWorld {
     if (input.left) dx -= 1;
     if (input.right) dx += 1;
     if (typeof input.aimX === "number" && typeof input.aimY === "number") {
-      // soft facing toward aim when idle-ish
       if (!dx && !dy) p.angle = Math.atan2(input.aimY - p.y, input.aimX - p.x);
     }
     if (dx || dy) this._moveCreature(p, sp, dx, dy, !!input.sprint, dt);
@@ -296,12 +589,21 @@ export class LifechainWorld {
     if (input.attack) this._tryAttack(p);
     if (input.eat) this._tryEat(p);
     if (input.drink) this._tryDrink(p);
+    if (input.pack) {
+      if (p.packId) this.tryLeavePack(p.id);
+      else {
+        this.tryJoinNearbyPack(p.id);
+        if (!p.packId) this.tryCreatePack(p.id);
+      }
+    }
+    if (input.territory) this.tryClaimTerritory(p.id);
 
-    // clear one-shot actions
     if (p.input) {
       p.input.attack = false;
       p.input.eat = false;
       p.input.drink = false;
+      p.input.pack = false;
+      p.input.territory = false;
     }
   }
 
@@ -313,7 +615,18 @@ export class LifechainWorld {
     const ai = n.ai;
     ai.timer -= dt;
 
-    // Hunger drives hunting / foraging
+    // Pack members follow leader when not hungry/thirsty
+    if (n.packId) {
+      const pack = this.packs.get(n.packId);
+      if (pack && pack.leaderId !== n.id) {
+        const leader = this.getCreature(pack.leaderId);
+        if (leader?.alive && dist(n, leader) > 90) {
+          this._steerToward(n, sp, leader.x, leader.y, dist(n, leader) > 180, dt);
+          if (n.hunger > 40 && n.thirst > 40) return;
+        }
+      }
+    }
+
     if (n.hunger < 45 && ai.state === "wander") {
       if (canForage(sp) && Math.random() < 0.6) ai.state = "forage";
       else if (sp.diet !== "herbivore") ai.state = "hunt";
@@ -329,9 +642,8 @@ export class LifechainWorld {
       this._steerToward(n, sp, ai.wx, ai.wy, false, dt);
     } else if (ai.state === "forage") {
       const plant = this._nearestPlant(n, 500);
-      if (!plant) {
-        ai.state = "wander";
-      } else if (dist(n, plant) < 36) {
+      if (!plant) ai.state = "wander";
+      else if (dist(n, plant) < 36) {
         this._forage(n, plant);
         if (n.hunger > 80) ai.state = "wander";
       } else this._steerToward(n, sp, plant.x, plant.y, false, dt);
@@ -349,7 +661,6 @@ export class LifechainWorld {
         ai.targetId = prey ? prey.id : null;
       }
       if (!prey) {
-        // scavenge
         const car = this._nearestCarcass(n, 450);
         if (car && canScavenge(sp)) {
           if (dist(n, car) < 40) {
@@ -365,7 +676,7 @@ export class LifechainWorld {
       }
     }
 
-    // Flee if badly outmatched and hurt
+    // Prey flee when hurt
     if (n.health < 40 && sp.guild === "prey") {
       const threat = this._nearestThreat(n, sp);
       if (threat) {
@@ -442,17 +753,22 @@ export class LifechainWorld {
     for (const o of this.allCreatures()) {
       if (!o.alive || o.id === hunter.id) continue;
       if (o.protectUntil && Date.now() < o.protectUntil) continue;
+      if (hunter.packId && o.packId === hunter.packId) continue;
       const osp = SPECIES[o.speciesId];
-      if (!canHunt(sp, osp) && !(sp.diet !== "herbivore" && osp.combatPower < sp.combatPower * 0.75)) {
-        // allow opportunistic attack on weaker targets for carnivores
-        if (!(sp.diet !== "herbivore" && osp.trophic < sp.trophic && osp.combatPower < sp.combatPower)) {
+      if (!canHunt(sp, osp)) {
+        if (
+          !(
+            sp.diet !== "herbivore" &&
+            osp.trophic < sp.trophic &&
+            osp.combatPower < sp.combatPower
+          )
+        ) {
           continue;
         }
       }
       if (osp.guild === "megaherbivore" && sp.guild !== "apex") continue;
       const d = dist(hunter, o);
       if (d > 520) continue;
-      // Prefer wildlife over players so the MMO doesn't spawn-camp newcomers
       const playerPenalty = o.isPlayer ? 0.55 : 0;
       const score = sp.combatPower / osp.combatPower - d / 800 - playerPenalty;
       if (score > bestScore) {
@@ -464,14 +780,15 @@ export class LifechainWorld {
   }
 
   _packCount(ent) {
-    const sp = SPECIES[ent.speciesId];
-    let n = 1;
-    for (const o of this.allCreatures()) {
-      if (!o.alive || o.id === ent.id) continue;
-      if (o.speciesId !== ent.speciesId) continue;
-      if (dist(ent, o) < 160) n += 1;
+    if (!ent.packId) return 1;
+    const pack = this.packs.get(ent.packId);
+    if (!pack) return 1;
+    let n = 0;
+    for (const id of pack.memberIds) {
+      const m = this.getCreature(id);
+      if (m?.alive && dist(ent, m) < 220) n += 1;
     }
-    return Math.min(n, 8);
+    return Math.min(Math.max(1, n), 10);
   }
 
   _tryAttack(ent) {
@@ -479,7 +796,8 @@ export class LifechainWorld {
     const sp = SPECIES[ent.speciesId];
     ent.attackCd = sp.attackCooldown;
     const pack = this._packCount(ent);
-    const dmg = strikeDamage(sp, ent.stamina / ent.maxStamina, pack);
+    const powerMul = ent._powerMul || rankForXp(ent.xp || 0).powerMul;
+    const dmg = strikeDamage(sp, ent.stamina / ent.maxStamina, pack) * powerMul;
 
     let target = null;
     let bestD = sp.attackRange + 8;
@@ -487,6 +805,7 @@ export class LifechainWorld {
     const fy = Math.sin(ent.angle);
     for (const o of this.allCreatures()) {
       if (!o.alive || o.id === ent.id) continue;
+      if (ent.packId && o.packId === ent.packId) continue;
       const d = dist(ent, o);
       if (d > bestD) continue;
       const toX = (o.x - ent.x) / (d || 1);
@@ -497,14 +816,14 @@ export class LifechainWorld {
       target = o;
     }
     if (!target) return;
-
     if (target.protectUntil && Date.now() < target.protectUntil) return;
 
     const tsp = SPECIES[target.speciesId];
-    // Defensive gore for herbivores / contested fights always allowed
-    const hunting = canHunt(sp, tsp) || sp.diet === "herbivore";
-    if (!hunting && tsp.combatPower > sp.combatPower * 1.1) {
-      // reckless attack still does reduced damage
+    // Herbivores may attack defensively; carnivores/omnivores respect canHunt when hunting
+    const hunting = sp.diet !== "herbivore";
+    if (hunting && !canHunt(sp, tsp) && tsp.combatPower >= sp.combatPower) {
+      // Still allow strikes on weaker targets / defensive scraps
+      if (tsp.combatPower > sp.combatPower * 1.15) return;
     }
 
     const mitigation = 1 / (1 + tsp.armor * 0.8);
@@ -513,12 +832,27 @@ export class LifechainWorld {
     target.lastHitBy = ent.id;
     ent.stamina = Math.max(0, ent.stamina - 8);
 
-    // Ambush bonus: attacker behind / from cover-ish if target sprinting away
     if (target.health <= 0) {
       this._kill(target, ent.id);
       if (sp.diet !== "herbivore") {
         ent.hunger = Math.min(100, ent.hunger + 28 + tsp.massKg * 0.02);
         ent.killCount += 1;
+        const xpGain = Math.round(8 + tsp.combatPower * 0.08);
+        this._grantXp(ent, xpGain, `slew ${tsp.name}`);
+        if (ent.packId) {
+          const pck = this.packs.get(ent.packId);
+          if (pck) {
+            for (const id of pck.memberIds) {
+              if (id === ent.id) continue;
+              const m = this.getCreature(id);
+              if (m?.alive && dist(ent, m) < 280) {
+                this._grantXp(m, Math.round(xpGain * 0.35), null);
+              }
+            }
+          }
+        }
+      } else {
+        this._grantXp(ent, 12, "defended with force");
       }
     }
   }
@@ -539,12 +873,10 @@ export class LifechainWorld {
     });
     const killer = killerId ? this.getCreature(killerId) : null;
     const kName = killer ? killer.name : "the wild";
-    this.events.push({
-      t: Date.now(),
-      text: `${victim.name} (${sp.name}) fell to ${kName}.`,
-    });
+    this._pushEvent(`${victim.name} (${sp.name}) fell to ${kName}.`);
+    if (victim.packId) this._leavePack(victim);
+    if (victim.territoryId) this._abandonTerritory(victim);
     if (!victim.isPlayer) {
-      // remove NPC after a beat via map cleanup
       setTimeout(() => this.npcs.delete(victim.id), 50);
     } else {
       victim.respawnTimer = 4;
@@ -562,18 +894,19 @@ export class LifechainWorld {
     p.stamina = 100;
     p.hunger = 70;
     p.thirst = 70;
-    p.x = rand(WORLD.width * 0.25, WORLD.width * 0.75);
-    p.y = rand(WORLD.height * 0.18, WORLD.height * 0.48);
+    // Keep XP on death — progression persists
+    const pos = this._favoredSpawn(sp);
+    p.x = pos.x;
+    p.y = pos.y;
     p.protectUntil = Date.now() + 20000;
     this._clearThreatsNear(p, 280);
-    this.events.push({ t: Date.now(), text: `${p.name} returns as ${sp.name}.` });
+    this._pushEvent(`${p.name} returns as ${sp.name}.`);
   }
 
-  /** Nudge dangerous carnivores away from a fresh spawn. */
   _clearThreatsNear(ent, radius) {
     const sp = SPECIES[ent.speciesId];
     for (const o of this.npcs.values()) {
-      if (!o.alive || o.isPlayer) continue;
+      if (!o.alive) continue;
       const osp = SPECIES[o.speciesId];
       if (osp.diet === "herbivore") continue;
       if (osp.combatPower < sp.combatPower * 0.8) continue;
@@ -594,6 +927,13 @@ export class LifechainWorld {
     const take = Math.min(plant.biomass, 12 * sp.forageYield);
     plant.biomass -= take;
     ent.hunger = Math.min(100, ent.hunger + take * 0.9);
+    if (ent.isPlayer) {
+      ent._forageXpAcc = (ent._forageXpAcc || 0) + take;
+      if (ent._forageXpAcc >= 40) {
+        ent._forageXpAcc = 0;
+        this._grantXp(ent, 5, null);
+      }
+    }
   }
 
   _scavenge(ent, carcass) {
@@ -602,6 +942,7 @@ export class LifechainWorld {
     const take = Math.min(carcass.meat, 14);
     carcass.meat -= take;
     ent.hunger = Math.min(100, ent.hunger + take * 1.1);
+    if (ent.isPlayer) this._grantXp(ent, 2, null);
   }
 
   _tryEat(ent) {
@@ -630,15 +971,15 @@ export class LifechainWorld {
     const viewer = this.players.get(viewerId);
     const vx = viewer?.x ?? WORLD.width / 2;
     const vy = viewer?.y ?? WORLD.height / 2;
-    const viewR = 1100;
+    const viewR = 1200;
+    const biome = biomeAt(vx, vy, WORLD.width, WORLD.height);
 
     const creatures = [];
     for (const c of this.allCreatures()) {
-      if (!c.alive && c.isPlayer) {
-        // still show dead players briefly
-      } else if (!c.alive) continue;
+      if (!c.alive && !c.isPlayer) continue;
       if (Math.hypot(c.x - vx, c.y - vy) > viewR) continue;
       const sp = SPECIES[c.speciesId];
+      const rank = rankForXp(c.xp || 0);
       creatures.push({
         id: c.id,
         speciesId: c.speciesId,
@@ -650,13 +991,16 @@ export class LifechainWorld {
         health: c.health,
         maxHealth: c.maxHealth,
         alive: c.alive,
-        combatPower: sp.combatPower,
+        combatPower: Math.round(sp.combatPower * rank.powerMul * 10) / 10,
         trophic: sp.trophic,
         guild: sp.guild,
         color: sp.color,
         accent: sp.accent,
         silhouette: sp.silhouette,
         sprint: !!c.sprint,
+        packId: c.packId,
+        territoryId: c.territoryId,
+        rankId: rank.id,
       });
     }
 
@@ -678,9 +1022,29 @@ export class LifechainWorld {
         speciesId: c.speciesId,
       }));
 
+    const territories = [...this.territories.values()]
+      .filter((t) => Math.hypot(t.x - vx, t.y - vy) < viewR + t.radius)
+      .map((t) => ({
+        id: t.id,
+        x: t.x,
+        y: t.y,
+        radius: t.radius,
+        speciesId: t.speciesId,
+        ownerId: t.ownerId,
+        packId: t.packId,
+        control: t.control,
+        contested: !!t.contestedBy,
+        color: SPECIES[t.speciesId]?.color || "#aaa",
+        mine:
+          t.ownerId === viewerId ||
+          (viewer?.packId && t.packId === viewer.packId),
+      }));
+
     let you = null;
     if (viewer) {
       const sp = SPECIES[viewer.speciesId];
+      const prog = xpProgress(viewer.xp || 0);
+      const pack = viewer.packId ? this.packs.get(viewer.packId) : null;
       you = {
         id: viewer.id,
         speciesId: viewer.speciesId,
@@ -695,11 +1059,28 @@ export class LifechainWorld {
         alive: viewer.alive,
         respawnTimer: viewer.respawnTimer || 0,
         killCount: viewer.killCount,
-        combatPower: sp.combatPower,
+        combatPower: Math.round(sp.combatPower * prog.cur.powerMul * 10) / 10,
         diet: sp.diet,
         guild: sp.guild,
         trophic: sp.trophic,
         speciesName: sp.name,
+        social: sp.social,
+        packLabel: sp.packLabel,
+        xp: viewer.xp || 0,
+        lifetimeXp: viewer.lifetimeXp || 0,
+        rankId: prog.cur.id,
+        rankName: prog.cur.name,
+        rankLabel: prog.cur.label,
+        rankPct: prog.pct,
+        nextRankName: prog.nxt?.name || null,
+        xpInto: prog.into,
+        xpNeed: prog.need,
+        packId: viewer.packId,
+        packTitle: pack?.name || null,
+        packSize: pack?.memberIds.length || 0,
+        isPackLeader: pack?.leaderId === viewer.id,
+        territoryId: viewer.territoryId,
+        canClaimTerritory: prog.cur.id !== "juvenile" && !viewer.territoryId,
       };
     }
 
@@ -711,8 +1092,11 @@ export class LifechainWorld {
       plants,
       waters,
       carcasses,
-      events: this.events.slice(-8),
-      biome: biomeAt(vx, vy).id,
+      territories,
+      events: this.events.slice(-10),
+      biome: biome.id,
+      biomeName: biome.name,
+      biomes: BIOMES.map((b) => ({ id: b.id, name: b.name, color: b.color })),
     };
   }
 }
