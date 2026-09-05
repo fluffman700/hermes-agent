@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lifechain — Animal Kingdom MMO</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Karla:wght@400;500;600;700&family=Staatliches&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div id="boot">
+      <div class="sky" aria-hidden="true"></div>
+      <div class="grass" aria-hidden="true"></div>
+      <div class="herd" aria-hidden="true"></div>
+      <header class="hero">
+        <p class="eyebrow">Survive the food web</p>
+        <h1>Lifechain</h1>
+        <p class="tagline">
+          A hyper-realistic animal kingdom where mass, bite, and trophic level decide who eats.
+        </p>
+        <div class="cta-row">
+          <button id="enterBtn" type="button">Enter the wild</button>
+          <button id="webBtn" type="button" class="ghost">View food web</button>
+        </div>
+      </header>
+    </div>
+
+    <div id="select" class="panel hidden" role="dialog" aria-label="Species selection">
+      <div class="select-inner">
+        <header class="select-head">
+          <h2>Choose your vessel</h2>
+          <p>Power scales with mass, weaponry, armor, and pack. Diet locks your place in the chain.</p>
+          <label class="name-field">
+            <span>Callsign</span>
+            <input id="playerName" maxlength="18" placeholder="Wanderer" autocomplete="off" />
+          </label>
+        </header>
+        <div id="speciesGrid" class="species-grid"></div>
+        <footer class="select-foot">
+          <button id="backBoot" type="button" class="ghost">Back</button>
+          <button id="joinBtn" type="button" disabled>Join as selected</button>
+        </footer>
+      </div>
+    </div>
+
+    <div id="foodweb" class="panel hidden" role="dialog" aria-label="Food web">
+      <div class="web-inner">
+        <header>
+          <h2>Trophic ladder</h2>
+          <p>Higher combat power and trophic level generally eat lower — megaherbivores break the rule by sheer mass.</p>
+        </header>
+        <ol id="powerLadder" class="power-ladder"></ol>
+        <button id="closeWeb" type="button" class="ghost">Close</button>
+      </div>
+    </div>
+
+    <div id="game" class="hidden">
+      <canvas id="canvas"></canvas>
+      <div id="hud">
+        <div class="hud-top">
+          <div class="brand-mark">Lifechain</div>
+          <div id="clock" class="clock">Dawn</div>
+          <div id="biome" class="biome">Savanna</div>
+        </div>
+        <div class="vitals">
+          <div class="bar"><span>Health</span><div class="track"><i id="hpBar"></i></div></div>
+          <div class="bar"><span>Stamina</span><div class="track"><i id="stBar"></i></div></div>
+          <div class="bar"><span>Hunger</span><div class="track"><i id="huBar"></i></div></div>
+          <div class="bar"><span>Thirst</span><div class="track"><i id="thBar"></i></div></div>
+        </div>
+        <div id="youCard" class="you-card"></div>
+        <div id="feed" class="feed"></div>
+        <div class="hint">
+          WASD move · Shift sprint · Click/Space hunt · E eat · Q drink · Tab food web · Esc menu
+        </div>
+      </div>
+      <div id="death" class="death hidden">
+        <h2>You were taken</h2>
+        <p id="deathText">The chain continues without you.</p>
+        <button id="respawnBtn" type="button">Return to the wild</button>
+      </div>
+    </div>
+
+    <script type="module" src="/game.js"></script>
+  </body>
+</html>
