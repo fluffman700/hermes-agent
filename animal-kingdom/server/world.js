@@ -197,7 +197,7 @@ export class LifechainWorld {
     return { x, y };
   }
 
-  spawnPlayer(wsId, speciesId, displayName) {
+  spawnPlayer(wsId, speciesId, displayName, savedXp = 0) {
     const playableIds = PLAYABLE.map((s) => s.id);
     const sid = playableIds.includes(speciesId) ? speciesId : "lion";
     const sp = SPECIES[sid];
@@ -206,6 +206,9 @@ export class LifechainWorld {
     p.name = (displayName || "Wanderer").slice(0, 18);
     p.hunger = 70;
     p.thirst = 70;
+    const xp = Math.max(0, Number(savedXp) || 0);
+    p.xp = xp;
+    p.lifetimeXp = xp;
     p.protectUntil = Date.now() + 20000;
     this._clearThreatsNear(p, 280);
     this.players.set(wsId, p);

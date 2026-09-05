@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Lifechain — Animal Kingdom MMO</title>
+    <title>Lifechain — Apex Five</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -18,10 +18,10 @@
       <div class="grass" aria-hidden="true"></div>
       <div class="herd" aria-hidden="true"></div>
       <header class="hero">
-        <p class="eyebrow">Survive the food web</p>
+        <p class="eyebrow">Packs · Territories · Bloodline</p>
         <h1>Lifechain</h1>
         <p class="tagline">
-          A hyper-realistic animal kingdom where mass, bite, and trophic level decide who eats.
+          Five apex vessels. Claim range, lead a pride or herd, and climb the bloodline ranks.
         </p>
         <div class="cta-row">
           <button id="enterBtn" type="button">Enter the wild</button>
@@ -34,7 +34,10 @@
       <div class="select-inner">
         <header class="select-head">
           <h2>Choose your vessel</h2>
-          <p>Power scales with mass, weaponry, armor, and pack. Diet locks your place in the chain.</p>
+          <p>
+            Top five by power. Social species form packs; solitary titans own territory.
+            Progression persists across deaths.
+          </p>
           <label class="name-field">
             <span>Callsign</span>
             <input id="playerName" maxlength="18" placeholder="Wanderer" autocomplete="off" />
@@ -51,10 +54,11 @@
     <div id="foodweb" class="panel hidden" role="dialog" aria-label="Food web">
       <div class="web-inner">
         <header>
-          <h2>Trophic ladder</h2>
-          <p>Higher combat power and trophic level generally eat lower — megaherbivores break the rule by sheer mass.</p>
+          <h2>Apex ladder</h2>
+          <p>Only the top five are playable. Prey wildlife still fills the food web.</p>
         </header>
         <ol id="powerLadder" class="power-ladder"></ol>
+        <div id="rankGuide" class="rank-guide"></div>
         <button id="closeWeb" type="button" class="ghost">Close</button>
       </div>
     </div>
@@ -73,15 +77,24 @@
           <div class="bar"><span>Hunger</span><div class="track"><i id="huBar"></i></div></div>
           <div class="bar"><span>Thirst</span><div class="track"><i id="thBar"></i></div></div>
         </div>
+        <div class="progress-block">
+          <div class="progress-head">
+            <span id="rankName">Juvenile</span>
+            <span id="xpLabel">0 XP</span>
+          </div>
+          <div class="track xp-track"><i id="xpBar"></i></div>
+          <div id="rankHint" class="rank-hint"></div>
+        </div>
         <div id="youCard" class="you-card"></div>
+        <div id="socialCard" class="social-card"></div>
         <div id="feed" class="feed"></div>
         <div class="hint">
-          WASD move · Shift sprint · Click/Space hunt · E eat · Q drink · Tab food web · Esc menu
+          WASD · Shift sprint · Click/Space hunt · E eat · Q drink · F pack · T territory · Tab ladder
         </div>
       </div>
       <div id="death" class="death hidden">
         <h2>You were taken</h2>
-        <p id="deathText">The chain continues without you.</p>
+        <p id="deathText">Your bloodline XP endures.</p>
         <button id="respawnBtn" type="button">Return to the wild</button>
       </div>
     </div>
