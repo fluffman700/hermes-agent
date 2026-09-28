@@ -21,12 +21,17 @@ export default function TabLayout() {
         tabBarStyle: {
           backgroundColor: colors.bgElevated,
           borderTopColor: colors.line,
-          height: 64,
-          paddingTop: 6,
+          height: 72,
+          paddingTop: 8,
+          paddingBottom: 10,
+        },
+        tabBarItemStyle: {
+          paddingVertical: 4,
         },
         tabBarLabelStyle: {
           fontFamily: 'DMSans_500Medium',
           fontSize: 11,
+          marginTop: 2,
         },
         headerShown: false,
       }}
@@ -44,6 +49,7 @@ export default function TabLayout() {
         name="create"
         options={{
           title: 'New Pick',
+          href: '/create',
           tabBarIcon: ({ color }) => (
             <TabGlyph label="+" color={String(color)} />
           ),
@@ -53,6 +59,7 @@ export default function TabLayout() {
         name="tipsters"
         options={{
           title: 'Tipsters',
+          href: '/tipsters',
           tabBarIcon: ({ color }) => (
             <TabGlyph label="%" color={String(color)} />
           ),
@@ -62,6 +69,7 @@ export default function TabLayout() {
         name="earn"
         options={{
           title: 'Earn',
+          href: '/earn',
           tabBarIcon: ({ color }) => (
             <TabGlyph label="$" color={String(color)} />
           ),
